@@ -16,15 +16,44 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from zoneinfo import ZoneInfo
 
-FEEDS = {
-    'Hugging Face · IA': 'https://huggingface.co/blog/feed.xml',
-    'Ethereum · Web3': 'https://blog.ethereum.org/feed.xml',
-    'ElizaOS · IA/Web3': 'https://github.com/elizaOS/eliza/releases.atom',
-    'Coinbase AgentKit · agentes y wallets': 'https://github.com/coinbase/agentkit/releases.atom',
-}
 NS = {'a': 'http://www.w3.org/2005/Atom'}
 STATE = Path('state.json')
 UTC = timezone.utc
+
+def load_config(path='config.json'):
+    config = json.loads(Path(path).read_text())
+    ZoneInfo(config['timezone'])
+    if not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d', config['digest_time']):
+        raise ValueError('digest_time debe tener formato HH:MM')
+    for name, minimum, maximum in [('max_alerts_per_day', 0, 20), ('digest_items', 1, 5), ('lookback_hours', 1, 72)]:
+        if type(config[name]) is not int or not minimum <= config[name] <= maximum:
+            raise ValueError(f'Valor inválido en {name}')
+    feeds = config['feeds']
+    if not isinstance(feeds, dict) or not 1 <= len(feeds) <= 20:
+        raise ValueError('Configura entre 1 y 20 feeds')
+    for name, url in feeds.items():
+        parsed = urllib.parse.urlsplit(url)
+        if not name or parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError('Cada feed debe tener nombre y URL HTTPS pública sin credenciales')
+    for key in ('include_keywords', 'exclude_keywords'):
+        if not isinstance(config[key], list) or not all(isinstance(v, str) for v in config[key]):
+            raise ValueError(f'{key} debe ser una lista de palabras')
+    return config
+
+
+def matches(item, config):
+    title = item['title'].casefold()
+    include = config['include_keywords']
+    return (not include or any(word.casefold() in title for word in include)) and not any(
+        word.casefold() in title for word in config['exclude_keywords'])
+
+
+def instance_state(state, instance):
+    # Un fork no debe heredar el historial de envíos del repositorio original.
+    if state.get('instance') != instance:
+        return {'instance': instance, 'seen': {}, 'daily': {}, 'digest': ''}
+    return state
+
 
 def date(value):
     try:
@@ -100,33 +129,38 @@ def main():
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--test', action='store_true')
     args = parser.parse_args()
+    config = load_config()
     if args.test:
-        send('✅ **Sixtos Radar conectado**\nMensaje de prueba desde GitHub Actions.\nRevisión de fuentes cada 30 minutos aproximadamente; resumen diario después de las 09:00 de Ciudad de México.\nSin API de X ni servicios de pago. Los avisos incluyen titulares originales y enlaces para revisión editorial.')
+        send(f"✅ **Radar conectado**\nMensaje de prueba desde tu GitHub Actions.\n"
+             f"Resumen diario a partir de las {config['digest_time']} ({config['timezone']}).\n"
+             'Fuentes públicas, sin API de X. Titulares originales y enlaces para revisión editorial.')
         print('Mensaje de prueba confirmado por Discord')
         return
     now = datetime.now(UTC)
-    local = now.astimezone(ZoneInfo('America/Mexico_City'))
+    local = now.astimezone(ZoneInfo(config['timezone']))
     today = local.date().isoformat()
     state = json.loads(STATE.read_text()) if STATE.exists() else {'seen': {}, 'daily': {}, 'digest': ''}
+    state = instance_state(state, os.environ.get('GITHUB_REPOSITORY', 'local'))
+    feeds = config['feeds']
     items, failed = {}, []
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for entries, error in pool.map(fetch, FEEDS.items()):
+        for entries, error in pool.map(fetch, feeds.items()):
             items.update({item['id']: item for item in entries})
             if error:
                 failed.append(error)
-    if len(failed) == len(FEEDS):
+    if len(failed) == len(feeds):
         raise RuntimeError('Ninguna fuente respondió; no se enviará un resumen vacío')
     recent = sorted((item for item in items.values()
-                     if now - timedelta(hours=24) <= date(item['published']) <= now),
+                     if now - timedelta(hours=config['lookback_hours']) <= date(item['published']) <= now and matches(item, config)),
                     key=lambda item: item['published'], reverse=True)
     if args.dry_run:
-        print(json.dumps({'sources_ok': len(FEEDS)-len(failed), 'failed': failed, 'recent': recent}, ensure_ascii=False, indent=2))
+        print(json.dumps({'sources_ok': len(feeds)-len(failed), 'failed': failed, 'recent': recent}, ensure_ascii=False, indent=2))
         return
     if not os.environ.get('DISCORD_WEBHOOK_URL'):
         raise ValueError('Falta el secreto DISCORD_WEBHOOK_URL; no se ha enviado nada')
     sent = state['daily'].get(today, 0)
     for item in recent:
-        if item['id'] in state['seen'] or sent >= 3:
+        if item['id'] in state['seen'] or sent >= config['max_alerts_per_day']:
             continue
         title = item['title'].replace('@', '＠').replace('`', '')[:400]
         send(f"🔎 **Novedad: {item['source']}**\n{title}\n"
@@ -138,12 +172,12 @@ def main():
         sent += 1
         state['daily'][today] = sent
         save(state)
-    if local.hour >= 9 and state.get('digest') != today:
-        lines = [f'🗞️ **Radar IA + Web3 · {today}**', 'Novedades de las últimas 24 horas:']
+    if local.strftime('%H:%M') >= config['digest_time'] and state.get('digest') != today:
+        lines = [f'🗞️ **Radar IA + Web3 · {today}**', f"Novedades de las últimas {config['lookback_hours']} horas:"]
         if not recent:
             lines.append('No se encontraron anuncios recientes en las fuentes disponibles.')
-        for item in recent[:5]:
-            lines.append(f"• {item['source']}: {item['title'][:130]}\n<{item['url']}>")
+        for item in recent[:config['digest_items']]:
+            lines.append(f"• {item['source']}: {item['title'].replace('@', '＠')[:130]}\n<{item['url']}>")
         if failed:
             lines.append('Cobertura parcial: no respondieron ' + ', '.join(failed))
         lines.append('Titulares originales. No mide tendencias ni genera resúmenes con IA.')
@@ -154,7 +188,7 @@ def main():
     state['seen'] = {k: v for k, v in state['seen'].items() if date(v) >= cutoff}
     state['daily'] = {k: v for k, v in state['daily'].items() if k >= cutoff.date().isoformat()}
     save(state)
-    print(f'Fuentes: {len(FEEDS)-len(failed)}/{len(FEEDS)}; novedades: {len(recent)}; avisos hoy: {sent}')
+    print(f'Fuentes: {len(feeds)-len(failed)}/{len(feeds)}; novedades: {len(recent)}; avisos hoy: {sent}')
 
 if __name__ == '__main__':
     try:

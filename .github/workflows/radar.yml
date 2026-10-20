@@ -1,6 +1,7 @@
 name: Radar IA y Web3
 on:
   schedule:
+    # UTC. Cambia esta expresión para ajustar la frecuencia en tu copia.
     - cron: '17,47 * * * *'
   workflow_dispatch:
 permissions:
@@ -13,12 +14,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Consultar fuentes y enviar a Discord
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           RUN_EVENT: ${{ github.event_name }}
         run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo 'Configura tu propio secreto DISCORD_WEBHOOK_URL antes de activar el radar.'
+            exit 1
+          fi
           python3 -m unittest -v
           if [ "$RUN_EVENT" = 'workflow_dispatch' ]; then
             python3 radar.py --test

@@ -1,0 +1,15 @@
+{
+  "timezone": "America/Mexico_City",
+  "digest_time": "09:00",
+  "max_alerts_per_day": 3,
+  "digest_items": 5,
+  "lookback_hours": 24,
+  "include_keywords": [],
+  "exclude_keywords": [],
+  "feeds": {
+    "Hugging Face · IA": "https://huggingface.co/blog/feed.xml",
+    "Ethereum · Web3": "https://blog.ethereum.org/feed.xml",
+    "ElizaOS · IA/Web3": "https://github.com/elizaOS/eliza/releases.atom",
+    "Coinbase AgentKit · agentes y wallets": "https://github.com/coinbase/agentkit/releases.atom"
+  }
+}

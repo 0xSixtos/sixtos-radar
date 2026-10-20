@@ -40,5 +40,48 @@ class RadarTests(unittest.TestCase):
                 self.assertEqual(body['allowed_mentions'], {'parse': []})
                 self.assertTrue(request.call_args.args[0].full_url.endswith('?wait=true'))
 
+class ConfigurationTests(unittest.TestCase):
+    def test_fork_resets_inherited_state(self):
+        original = {'instance': 'alice/radar', 'seen': {'old': 'stamp'}, 'daily': {'date': 3}, 'digest': 'date'}
+        fork = radar.instance_state(original, 'bob/radar')
+        self.assertEqual(fork['instance'], 'bob/radar')
+        self.assertEqual(fork['seen'], {})
+        self.assertEqual(fork['daily'], {})
+        self.assertEqual(fork['digest'], '')
+        self.assertIs(radar.instance_state(original, 'alice/radar'), original)
+
+    def test_keyword_filters(self):
+        config = {'include_keywords': ['wallet', 'agent'], 'exclude_keywords': ['giveaway']}
+        self.assertTrue(radar.matches({'title': 'New AGENT wallet'}, config))
+        self.assertFalse(radar.matches({'title': 'Agent giveaway'}, config))
+        self.assertFalse(radar.matches({'title': 'Other topic'}, config))
+
+    def test_custom_timezone_and_invalid_config(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        config = radar.load_config()
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder) / 'config.json'
+            config.update(timezone='Europe/Madrid', digest_time='08:30')
+            target.write_text(json.dumps(config))
+            self.assertEqual(radar.load_config(target)['digest_time'], '08:30')
+            config['digest_time'] = '25:00'
+            target.write_text(json.dumps(config))
+            with self.assertRaisesRegex(ValueError, 'HH:MM'):
+                radar.load_config(target)
+            config['digest_time'] = '08:30'
+            config['feeds'] = {'private': 'https://user:password@example.org/feed'}
+            target.write_text(json.dumps(config))
+            with self.assertRaisesRegex(ValueError, 'sin credenciales'):
+                radar.load_config(target)
+
+    def test_timezone_switches_dates_across_midnight(self):
+        from datetime import datetime, timezone
+        from zoneinfo import ZoneInfo
+        moment = datetime(2026, 10, 20, 1, 0, tzinfo=timezone.utc)
+        self.assertEqual(moment.astimezone(ZoneInfo('America/Mexico_City')).date().isoformat(), '2026-10-19')
+        self.assertEqual(moment.astimezone(ZoneInfo('Europe/Madrid')).date().isoformat(), '2026-10-20')
+
 if __name__ == '__main__':
     unittest.main()
