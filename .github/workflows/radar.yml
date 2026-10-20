@@ -17,7 +17,13 @@ jobs:
       - name: Consultar fuentes y enviar a Discord
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: python3 radar.py
+          RUN_EVENT: ${{ github.event_name }}
+        run: |
+          python3 -m unittest -v
+          if [ "$RUN_EVENT" = 'workflow_dispatch' ]; then
+            python3 radar.py --test
+          fi
+          python3 radar.py
       - name: Guardar noticias enviadas
         if: always()
         run: |

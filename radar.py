@@ -98,7 +98,12 @@ def send(message):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--test', action='store_true')
     args = parser.parse_args()
+    if args.test:
+        send('✅ **Sixtos Radar conectado**\nMensaje de prueba desde GitHub Actions.\nRevisión de fuentes cada 30 minutos aproximadamente; resumen diario después de las 09:00 de Ciudad de México.\nSin API de X ni servicios de pago. Los avisos incluyen titulares originales y enlaces para revisión editorial.')
+        print('Mensaje de prueba confirmado por Discord')
+        return
     now = datetime.now(UTC)
     local = now.astimezone(ZoneInfo('America/Mexico_City'))
     today = local.date().isoformat()
