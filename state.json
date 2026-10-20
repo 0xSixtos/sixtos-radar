@@ -1,6 +1,10 @@
 {
   "instance": "0xSixtos/sixtos-radar",
-  "seen": {},
-  "daily": {},
+  "seen": {
+    "c2b4b68d7e0027f0e4366133eb322fd84020df1d31b2a05734fa7c44edc22eb2": "2026-10-20T12:42:55.149489+00:00"
+  },
+  "daily": {
+    "2026-10-20": 1
+  },
   "digest": ""
 }
