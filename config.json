@@ -1,7 +1,7 @@
 {
   "timezone": "America/Mexico_City",
-  "digest_time": "09:00",
-  "max_alerts_per_day": 3,
+  "digest_time": "08:00",
+  "max_alerts_per_day": 2,
   "digest_items": 5,
   "lookback_hours": 24,
   "include_keywords": [],
